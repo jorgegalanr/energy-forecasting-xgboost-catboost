@@ -1,114 +1,116 @@
-# ⚡ Energy Forecasting with XGBoost & CatBoost
+# Energy Forecasting with XGBoost & CatBoost
 
-[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
-[![XGBoost](https://img.shields.io/badge/XGBoost-2.0-green.svg)](https://xgboost.readthedocs.io/)
-[![CatBoost](https://img.shields.io/badge/CatBoost-1.2-orange.svg)](https://catboost.ai/)
-[![Prophet](https://img.shields.io/badge/Prophet-Forecasting-purple.svg)](https://facebook.github.io/prophet/)
+Proyecto reproducible de forecasting horario que compara XGBoost y CatBoost con referencias ingenuas. La tarea es predecir el consumo de la próxima hora utilizando exclusivamente datos conocidos hasta la hora anterior.
 
-**Predicción de consumo energético** usando técnicas de series temporales. Comparativa de 4 modelos: LSTM, Prophet, XGBoost y **CatBoost** (ganador).
+Este repositorio demuestra preparación de series temporales, prevención de fuga de información, validación cronológica y comunicación de métricas. El caso no utiliza información financiera, pero las mismas decisiones metodológicas son aplicables a forecasting de demanda, cobros o tesorería.
 
-## 🎯 Objetivos del Proyecto
+## Pregunta analítica
 
-- Limpiar y preparar datos horarios de consumo energético
-- Detectar estacionalidad y estacionariedad (ADF test, descomposición)
-- Comparar rendimiento de **deep learning** vs **gradient boosting** vs **modelos estadísticos**
-- Identificar el modelo más preciso y eficiente para forecasting energético
+> ¿Cuánto consumo se observará en la siguiente hora, una vez disponible el dato de la hora actual?
 
-## 📊 Dataset
+El alcance es deliberadamente concreto: **forecast rolling de una hora por delante**. No se presentan las predicciones de varios años como válidas porque, sin observaciones futuras ni variables exógenas, ese escenario exigiría una estrategia recursiva diferente y acumularía error.
 
-**Consumo energético horario** (valores reales de kWh):
-- **Período:** 2002–2016 
-- **Train:** 2002–2015 (~100K observaciones)
-- **Test:** 2015–2016 (~12K observaciones)
-- **Frecuencia:** Horaria → agregada a diaria para algunos modelos
+## Datos
 
-**Preprocesamiento aplicado:**
-- Interpolación de valores faltantes (<1%)
-- Detección/eliminación de duplicados
-- Creación de **lags** (1,7,30 días) y **rolling windows**
+El archivo `data/energy_train.csv` contiene 124.870 registros horarios entre abril de 2002 y junio de 2016. El proceso reproducible:
 
-## 🔬 Metodología
+- ordena cronológicamente;
+- conserva una observación en cada marca temporal duplicada;
+- reconstruye una rejilla horaria completa;
+- interpola 28 huecos internos;
+- valida que no queden valores ausentes ni consumos no positivos.
 
-EDA → Tendencia ↑, estacionalidad diaria/semanal/anual
+La fuente original y la unidad física no están documentadas en el material de partida. Por eso el proyecto habla de **unidades de consumo** y declara esta carencia como una limitación, en lugar de atribuir al dato una procedencia o unidad no verificadas.
 
-Stationarity → ADF test: p-value < 0.05 (estacionaria)
+## Prevención de fuga de información
 
-Feature Engineering → Lags, rolling means, dummies festivos
+Las variables predictoras son:
 
-Modelado → 4 algoritmos comparados
+- retardos de 1, 2, 24, 48 y 168 horas;
+- media y desviación móvil de 24 y 168 horas;
+- ciclos horarios, semanales y anuales codificados con seno y coseno.
 
-Evaluación → MAE, RMSE, MAPE en test set
+Las estadísticas móviles se calculan sobre `Energy.shift(1)`. Así, el valor real de la hora que se intenta estimar no interviene en sus propias variables. La división también es estrictamente temporal:
 
-text
+| Conjunto | Periodo |
+|---|---|
+| Entrenamiento | abril de 2002 — diciembre de 2015 |
+| Test final | enero de 2016 — junio de 2016 |
 
-## 📈 Resultados
+## Resultados reproducidos
 
-### **Comparativa de Modelos**
+Resultados obtenidos ejecutando `python run_analysis.py`:
 
-| Modelo | MAE ↓ | RMSE ↓ | MAPE ↓ | Tiempo Entrenamiento |
-|--------|-------|--------|--------|---------------------|
-| **LSTM** | 58.2 | 74.1 | 12.3% | **120 min** |
-| **Prophet** | 52.4 | 68.3 | **9.8%** | 8 min |
-| **XGBoost** | **48.7** | **64.4** | 10.2% | 3 min |
-| **CatBoost** ⭐ | **44.1** | **58.0** | **9.5%** | **2 min** |
+| Modelo | MAE | RMSE | WAPE |
+|---|---:|---:|---:|
+| XGBoost | 50,21 | 65,77 | 0,91 % |
+| CatBoost | 50,13 | 65,83 | 0,91 % |
+| Persistencia (1 hora) | 153,79 | 199,06 | 2,78 % |
+| Referencia semanal (168 horas) | 602,93 | 827,00 | 10,91 % |
 
-### **🏆 Ganador: CatBoost**
-✅ Mejor precisión (RMSE ↓15% vs LSTM)
-✅ Más rápido (60x vs LSTM)
-✅ Menos tuning requerido
-✅ Manejo automático de categóricas
+XGBoost obtiene el menor RMSE y CatBoost el menor MAE, pero la diferencia entre ambos es pequeña. La conclusión defendible es que ambos superan ampliamente las referencias en este test; no que uno sea universalmente mejor.
 
-text
+![Forecast de la última semana](reports/generated/forecast_last_week.png)
 
-**Insights clave:**
-- **Gradient boosting > deep learning** para series temporales medianas
-- **Lags 7/30 días** fueron las features más predictivas
-- **Festivos + temperatura** impactaron +20% en error
+![Importancia de variables](reports/generated/xgboost_feature_importance.png)
 
-## 🛠️ Tech Stack Completo
+## Estructura
 
-Core ML: XGBoost 2.0, CatBoost 1.2, scikit-learn
-Time Series: Prophet 1.1, statsmodels
-Deep Learning: TensorFlow 2.12, Keras
-Data: Pandas, NumPy
-Viz: Matplotlib, Seaborn, Plotly
+```text
+.
+├── data/energy_train.csv              # Serie histórica incluida
+├── notebooks/energy_forecasting.ipynb # Recorrido analítico reproducible
+├── reports/generated/                 # Métricas, predicciones y figuras
+├── src/
+│   ├── data.py                        # Calidad y regularización horaria
+│   ├── features.py                    # Variables estrictamente causales
+│   ├── evaluation.py                  # Split, referencias y métricas
+│   └── modeling.py                    # Configuración de modelos
+├── tests/                              # Controles de datos y leakage
+└── run_analysis.py                     # Ejecución completa por CLI
+```
 
-text
+## Instalación y ejecución
 
-## 🚀 Instalación y Uso
+Probado con Python 3.11. Python 3.12 también es compatible con las dependencias declaradas.
 
 ```bash
-git clone https://github.com/jorgegalanr/energy-forecasting-xgboost-catboost.git
-cd energy-forecasting-xgboost-catboost
-pip install -r requirements.txt
-jupyter notebook notebooks/energy_forecasting.ipynb
-📁 Estructura del Proyecto
-text
-├── data/
-│   ├── energy_hourly.csv
-│   └── energy_daily.csv
-├── notebooks/
-│   └── energy_forecasting.ipynb
-├── src/
-│   ├── preprocessing.py
-│   ├── feature_engineering.py
-│   └── model_comparison.py
-├── models/
-│   ├── catboost_best.pkl
-│   └── xgboost_best.pkl
-├── figures/
-│   ├── forecast_comparison.png
-│   └── feature_importance.png
-└── requirements.txt
-🎯 Aplicaciones Reales
-text
-🏭 Utilities: Optimización de generación eléctrica
-🏢 Edificios: Gestión inteligente de consumo
-🌡️ Smart Grids: Predicción de demanda por zonas
-💰 Trading: Arbitraje de precios energéticos
+python -m venv .venv
+source .venv/bin/activate           # Linux/macOS
+# .\.venv\Scripts\Activate.ps1    # Windows PowerShell
 
-👤 Autor
-Jorge Galán Rodríguez
-💼 linkedin.com/in/jorgegalanrodriguez
-🐱 https://github.com/jorgegalanr
-jorgegalanrodriguez@gmail.com
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python run_analysis.py
+```
+
+Para abrir el análisis narrativo:
+
+```bash
+python -m jupyter notebook notebooks/energy_forecasting.ipynb
+```
+
+## Pruebas
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+Las pruebas comprueban la limpieza de duplicados y huecos, la división cronológica, las métricas y que las medias móviles excluyen el objetivo actual. GitHub Actions las ejecuta en cada Pull Request.
+
+## Limitaciones
+
+- La procedencia y unidad de la serie original no están verificadas.
+- La evaluación es de una hora por delante con actualización de observaciones reales.
+- No se utilizan variables exógenas como temperatura, festivos o actividad económica.
+- Un despliegue real requeriría monitorización del error, detección de deriva y una política de reentrenamiento.
+- Los resultados no deben extrapolarse a forecasting multi-step sin una evaluación específica.
+
+## Autor
+
+Jorge Galán Rodríguez — [GitHub](https://github.com/jorgegalanr)
+
+## Licencia
+
+MIT.

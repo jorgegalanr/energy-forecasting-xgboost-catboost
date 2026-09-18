@@ -1,6 +1,6 @@
 # Energy Forecasting with XGBoost & CatBoost
 
-Proyecto reproducible para analizar el comportamiento del consumo por hora y comparar XGBoost y CatBoost con referencias ingenuas. Incluye un forecast rolling de una hora y una extensión recursiva de 90 días.
+Proyecto analiza el comportamiento del consumo por hora y comparar XGBoost y CatBoost con referencias ingenuas. Incluye un forecast rolling de una hora y una extensión recursiva de 90 días.
 
 Este repositorio demuestra preparación de series temporales, prevención de fuga de información, validación cronológica y comunicación de métricas. El caso no utiliza información financiera, pero las mismas decisiones metodológicas son aplicables a forecasting de demanda, cobros o tesorería.
 
@@ -103,7 +103,7 @@ CatBoost conserva mejor los ciclos horarios y supera las referencias, pero suavi
 
 ## Instalación y ejecución
 
-Probado con Python 3.11. Python 3.12 también es compatible con las dependencias declaradas.
+Probado con Python 3.12 con las dependencias declaradas.
 
 ```bash
 python -m venv .venv
@@ -128,7 +128,7 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-Las ocho pruebas comprueban la limpieza de duplicados y huecos, la división cronológica, las métricas, la construcción causal de variables y que el forecast largo reutiliza sus propias predicciones. GitHub Actions las ejecuta en cada Pull Request.
+Las ocho pruebas comprueban la limpieza de duplicados y huecos, la división cronológica, las métricas, la construcción causal de variables y que el forecast largo reutiliza sus propias predicciones.
 
 ## Limitaciones
 

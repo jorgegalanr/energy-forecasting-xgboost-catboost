@@ -10,11 +10,13 @@ from src.data import load_energy_data
 from src.evaluation import naive_from_lag, regression_metrics, split_at
 from src.features import build_causal_features
 from src.modeling import build_catboost, build_xgboost
+from src.recursive import recursive_forecast, recursive_naive
 
 
 DEFAULT_DATA = Path("data/energy_train.csv")
 DEFAULT_OUTPUT = Path("reports/generated")
 TEST_START = "2016-01-01 00:00:00"
+THREE_MONTH_HOURS = 24 * 90
 
 
 def run(data_path: Path, output_dir: Path) -> pd.DataFrame:
@@ -67,11 +69,66 @@ def run(data_path: Path, output_dir: Path) -> pd.DataFrame:
     fig.savefig(output_dir / "xgboost_feature_importance.png", dpi=160)
     plt.close(fig)
 
+    # Extensión multi-step: se reservan las últimas 2.160 horas y, tras la
+    # primera predicción, los modelos solo pueden reutilizar sus propios valores.
+    future_index = frame.index[-THREE_MONTH_HOURS:]
+    recursive_train = features.loc[features.index < future_index.min()]
+    recursive_history = frame.loc[frame.index < future_index.min(), "Energy"]
+    recursive_actual = frame.loc[future_index, "Energy"]
+    recursive_models = {"XGBoost": build_xgboost(), "CatBoost": build_catboost()}
+    recursive_predictions: dict[str, object] = {
+        "Persistence": recursive_naive(recursive_history, len(future_index), lag=1),
+        "Seasonal naive (168h)": recursive_naive(
+            recursive_history, len(future_index), lag=168
+        ),
+    }
+    for name, model in recursive_models.items():
+        model.fit(recursive_train[feature_columns], recursive_train["target"])
+        recursive_predictions[name] = recursive_forecast(
+            model, recursive_history, future_index
+        )
+
+    recursive_rows = []
+    recursive_frame = pd.DataFrame({"actual": recursive_actual}, index=future_index)
+    for name, values in recursive_predictions.items():
+        recursive_frame[name] = values
+        recursive_rows.append(
+            {"model": name, **regression_metrics(recursive_actual, values)}
+        )
+    recursive_metrics = (
+        pd.DataFrame(recursive_rows).sort_values("RMSE").reset_index(drop=True)
+    )
+    recursive_metrics.to_csv(output_dir / "three_month_metrics.csv", index=False)
+    recursive_frame.to_csv(
+        output_dir / "three_month_predictions.csv", index_label="Datetime"
+    )
+
+    fig, ax = plt.subplots(figsize=(13, 5))
+    ax.plot(recursive_frame.index, recursive_frame["actual"], label="Real", linewidth=1)
+    ax.plot(
+        recursive_frame.index,
+        recursive_frame[recursive_metrics.loc[0, "model"]],
+        label=recursive_metrics.loc[0, "model"],
+        linewidth=1,
+    )
+    ax.set(title="Forecast recursivo — horizonte de 90 días", ylabel="Consumo")
+    ax.legend()
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    fig.savefig(output_dir / "forecast_three_months.png", dpi=160)
+    plt.close(fig)
+
     print(
         f"Datos: {quality.start} — {quality.end} | "
         f"duplicados={quality.duplicate_timestamps} | huecos={quality.inserted_hours}"
     )
     print(metrics.to_string(index=False, float_format=lambda value: f"{value:.3f}"))
+    print("\nForecast recursivo de 90 días (sin consumos futuros observados):")
+    print(
+        recursive_metrics.to_string(
+            index=False, float_format=lambda value: f"{value:.3f}"
+        )
+    )
     return metrics
 
 

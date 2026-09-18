@@ -1,14 +1,19 @@
 # Energy Forecasting with XGBoost & CatBoost
 
-Proyecto reproducible de forecasting horario que compara XGBoost y CatBoost con referencias ingenuas. La tarea es predecir el consumo de la próxima hora utilizando exclusivamente datos conocidos hasta la hora anterior.
+Proyecto reproducible para analizar el comportamiento del consumo por hora y comparar XGBoost y CatBoost con referencias ingenuas. Incluye un forecast rolling de una hora y una extensión recursiva de 90 días.
 
 Este repositorio demuestra preparación de series temporales, prevención de fuga de información, validación cronológica y comunicación de métricas. El caso no utiliza información financiera, pero las mismas decisiones metodológicas son aplicables a forecasting de demanda, cobros o tesorería.
 
 ## Pregunta analítica
 
-> ¿Cuánto consumo se observará en la siguiente hora, una vez disponible el dato de la hora actual?
+> ¿Qué patrones presenta el consumo horario y con qué precisión pueden anticiparse la siguiente hora y un horizonte continuo de tres meses?
 
-El alcance es deliberadamente concreto: **forecast rolling de una hora por delante**. No se presentan las predicciones de varios años como válidas porque, sin observaciones futuras ni variables exógenas, ese escenario exigiría una estrategia recursiva diferente y acumularía error.
+El proyecto separa dos usos que no deben confundirse:
+
+- **Una hora por delante:** cada nueva predicción puede usar el último consumo real observado.
+- **90 días:** solo se conocen los datos anteriores al inicio; después, los modelos reutilizan sus propias predicciones y acumulan error.
+
+Ambos resultados mantienen frecuencia horaria. No se extrapola hasta 2018 porque un horizonte tan largo sin variables exógenas no quedaba validado por los datos disponibles.
 
 ## Datos
 
@@ -21,6 +26,16 @@ El archivo `data/energy_train.csv` contiene 124.870 registros horarios entre abr
 - valida que no queden valores ausentes ni consumos no positivos.
 
 La fuente original y la unidad física no están documentadas en el material de partida. Por eso el proyecto habla de **unidades de consumo** y declara esta carencia como una limitación, en lugar de atribuir al dato una procedencia o unidad no verificadas.
+
+## Análisis del comportamiento
+
+El notebook estudia antes de modelizar:
+
+- evolución del consumo medio diario y tendencia anual móvil;
+- patrón medio según la hora del día;
+- diferencias por día de la semana y mes;
+- detalle de ciclos horarios en periodos cortos;
+- contraste ADF, interpretado sin confundir estacionariedad estadística con ausencia de estacionalidad.
 
 ## Prevención de fuga de información
 
@@ -37,7 +52,7 @@ Las estadísticas móviles se calculan sobre `Energy.shift(1)`. Así, el valor r
 | Entrenamiento | abril de 2002 — diciembre de 2015 |
 | Test final | enero de 2016 — junio de 2016 |
 
-## Resultados reproducidos
+## Resultados reproducidos: una hora
 
 Resultados obtenidos ejecutando `python run_analysis.py`:
 
@@ -54,6 +69,21 @@ XGBoost obtiene el menor RMSE y CatBoost el menor MAE, pero la diferencia entre 
 
 ![Importancia de variables](reports/generated/xgboost_feature_importance.png)
 
+## Extensión reproducida: 90 días
+
+Se reservan las últimas 2.160 horas de la serie. Durante ese periodo no se incorporan consumos reales a los retardos ni a las medias móviles:
+
+| Modelo | MAE | RMSE | WAPE |
+|---|---:|---:|---:|
+| CatBoost | 304,08 | 450,87 | 5,98 % |
+| XGBoost | 347,76 | 518,99 | 6,85 % |
+| Referencia semanal | 541,25 | 753,41 | 10,65 % |
+| Persistencia | 885,20 | 1.125,22 | 17,42 % |
+
+CatBoost conserva mejor los ciclos horarios y supera las referencias, pero suaviza algunos picos. La pérdida de precisión frente al forecast de una hora cuantifica el coste real de ampliar el horizonte sin temperatura, festivos u otras variables explicativas.
+
+![Forecast recursivo de 90 días](reports/generated/forecast_three_months.png)
+
 ## Estructura
 
 ```text
@@ -65,7 +95,8 @@ XGBoost obtiene el menor RMSE y CatBoost el menor MAE, pero la diferencia entre 
 │   ├── data.py                        # Calidad y regularización horaria
 │   ├── features.py                    # Variables estrictamente causales
 │   ├── evaluation.py                  # Split, referencias y métricas
-│   └── modeling.py                    # Configuración de modelos
+│   ├── modeling.py                    # Configuración de modelos
+│   └── recursive.py                   # Forecast multi-step sin datos futuros
 ├── tests/                              # Controles de datos y leakage
 └── run_analysis.py                     # Ejecución completa por CLI
 ```
@@ -97,15 +128,15 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-Las pruebas comprueban la limpieza de duplicados y huecos, la división cronológica, las métricas y que las medias móviles excluyen el objetivo actual. GitHub Actions las ejecuta en cada Pull Request.
+Las ocho pruebas comprueban la limpieza de duplicados y huecos, la división cronológica, las métricas, la construcción causal de variables y que el forecast largo reutiliza sus propias predicciones. GitHub Actions las ejecuta en cada Pull Request.
 
 ## Limitaciones
 
 - La procedencia y unidad de la serie original no están verificadas.
-- La evaluación es de una hora por delante con actualización de observaciones reales.
+- El forecast de 90 días es recursivo y acumula sus propios errores.
 - No se utilizan variables exógenas como temperatura, festivos o actividad económica.
 - Un despliegue real requeriría monitorización del error, detección de deriva y una política de reentrenamiento.
-- Los resultados no deben extrapolarse a forecasting multi-step sin una evaluación específica.
+- Los resultados no deben extrapolarse a horizontes superiores a los 90 días evaluados.
 
 ## Autor
 
